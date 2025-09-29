@@ -1,0 +1,22 @@
+groups:
+- name: disk-usage-alerts
+  rules:
+  - alert: DiskUsageWarning
+    expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) > 0.7
+    for: 2m
+    labels:
+      severity: warning
+      priority: "P3"
+    annotations:
+      summary: "Disk usage on {{ $labels.instance }}"
+      description: "Disk usage > 70% on {{ $labels.mountpoint }}."
+
+  - alert: DiskUsageCritical
+    expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) > 0.9
+    for: 1m
+    labels:
+      severity: critical
+      priority: "P1"
+    annotations:
+      summary: "Disk usage on {{ $labels.instance }}"
+      description: "Disk usage > 90% on {{ $labels.mountpoint }}."

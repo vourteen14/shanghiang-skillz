@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nextjs
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/vourteen14/shanghiang-skillz.git
+    targetRevision: main
+    path: cicd/nextjs-charts
+    helm:
+      valueFiles:
+        - ../values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+  revisionHistoryLimit: 10

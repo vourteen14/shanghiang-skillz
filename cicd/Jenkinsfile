@@ -1,0 +1,100 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_IMAGE = 'bobobox-nextjs'
+        DOCKER_REGISTRY = credentials('DOCKER_REGISTRY')
+        GIT_TOKEN = credentials('GIT_TOKEN')
+        INFRA_REPO = credentials('INFRA_REPO')
+        INFRA_BRANCH = 'main'
+    }
+
+    triggers {
+        githubPush()
+    }
+
+    stages {
+
+        stage('Checkout Code') {
+            steps {
+                script {
+                    env.GIT_TAG = sh(
+                        script: "git describe --tags --exact-match HEAD 2>/dev/null || echo 'latest'",
+                        returnStdout: true
+                    ).trim()
+
+                    env.DOCKER_TAG = env.GIT_TAG ?: 'latest'
+                    echo "Release: ${env.DOCKER_TAG}"
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh "cd nextjs && docker build --no-cache -t ${DOCKER_IMAGE}:${env.DOCKER_TAG} ."
+            }
+        }
+
+        stage('Tag and Push to Registry') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'DOCKER_CREDENTIALS', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh """
+                        echo \${DOCKER_PASS} | docker login ${DOCKER_REGISTRY} -u \${DOCKER_USER} --password-stdin
+                        docker tag ${DOCKER_IMAGE}:${env.DOCKER_TAG} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.DOCKER_TAG}
+                        docker tag ${DOCKER_IMAGE}:${env.DOCKER_TAG} ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.DOCKER_TAG}
+                        docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest
+                    """
+                }
+            }
+        }
+
+        stage('Cleanup Docker Images') {
+            steps {
+                script {
+                    sh "docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:${env.DOCKER_TAG} -f || true"
+                    sh "docker rmi ${DOCKER_REGISTRY}/${DOCKER_IMAGE}:latest -f || true"
+                }
+            }
+        }
+
+        stage('Update Tag Repository') {
+            steps {
+                script {
+                    sh """
+                        rm -rf infra-repo || true
+                        git clone https://\${GIT_TOKEN}@\$(echo \${INFRA_REPO} | sed 's|https://||') infra-repo
+                        cd infra-repo
+                        git checkout ${INFRA_BRANCH}
+                    """
+
+                    sh """
+                        cd infra-repo
+                        sed -e 's/IMAGE/${DOCKER_REGISTRY}\\/${DOCKER_IMAGE}/g' -e 's/TAG/${env.DOCKER_TAG}/g' cicd/values.yaml.tpl > cicd/values.yaml
+                    """
+
+                    sh """
+                        cd infra-repo
+                        git config user.name "Jenkins CI"
+                        git config user.email "jenkins@karuhun.dev"
+                        git add cicd/values.yaml
+                        git commit -m "Release version ${env.DOCKER_TAG}" || exit 0
+                        git push https://\${GIT_TOKEN}@\$(echo \${INFRA_REPO} | sed 's|https://||') ${INFRA_BRANCH}
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()
+        }
+        success {
+            echo "Pipeline completed successfully for ${DOCKER_IMAGE}:${env.DOCKER_TAG}"
+        }
+        failure {
+            echo "Pipeline failed for ${DOCKER_IMAGE}:${env.DOCKER_TAG}"
+        }
+    }
+}
