@@ -22,5 +22,5 @@ Arch document for define decision & reason for choosen DevOps stack and producti
 Infrastructure => OpenTofu + GCP  
 Application => Next.js + Docker  
 CI/CD => Jenkins + ArgoCD + Helm  
-Monitoring => Prometheus + Grafana + AlertManager  
+Monitoring => Health check script + AlertManager  
 Orchestration => Kubernetes
